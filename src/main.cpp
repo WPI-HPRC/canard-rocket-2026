@@ -3,7 +3,7 @@
 #include "State.h"
 #include "States.h"
 
-#include "SensorManager/SensorManager.h"
+#include "boilerplate/Sensors/SensorManager/SensorManager.h"
 #include "config.h"
 
 #include "logging.h"
