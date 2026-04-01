@@ -29,7 +29,7 @@ bool initializeLogging(Context *ctx) {
             fileIdx++;
 
             Serial.printf("Trying files `%s/%s`\n", filename, errorFilename);
-            if (SD.exists(filename))
+            if (!SD.exists(filename))
             {
                 ctx->logFile = SD.open(filename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
                 ctx->errorLogFile = SD.open(errorFilename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);

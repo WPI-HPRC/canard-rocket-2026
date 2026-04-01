@@ -240,7 +240,7 @@ void setup() {
     // NOTE: Run initialization on the first state
     initStateData(&data);
     (*initFuncs[currentState])(&data);
-    // sensorsSetup();
+    sensorsSetup();
     ctx.ekfLooping = false;
     ctx.sdInitialized = initializeLogging(&ctx);
 
