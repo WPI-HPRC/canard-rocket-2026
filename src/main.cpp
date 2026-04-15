@@ -1,7 +1,15 @@
 #include <Arduino.h>
 #include "Context.h"
 #include "State.h"
-#include "States.h"
+#ifdef __has_include
+  #if __has_include("states/States.h")
+    #include "states/States.h"
+  #else
+    #include "template_states/States.h"
+  #endif
+#else
+  #include "template_states/States.h"
+#endif
 
 #include "boilerplate/Sensors/Impl/ASM330.h"
 #include "boilerplate/Sensors/SensorManager/SensorManager.h"
