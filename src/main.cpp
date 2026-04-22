@@ -1,14 +1,14 @@
-#include <Arduino.h>
 #include "Context.h"
 #include "State.h"
+#include <Arduino.h>
 #ifdef __has_include
-  #if __has_include("states/States.h")
-    #include "states/States.h"
-  #else
-    #include "template_states/States.h"
-  #endif
+#if __has_include("states/States.h")
+#include "states/States.h"
 #else
-  #include "template_states/States.h"
+#include "template_states/States.h"
+#endif
+#else
+#include "template_states/States.h"
 #endif
 
 #include "boilerplate/Sensors/Impl/ASM330.h"
@@ -16,9 +16,9 @@
 
 #include "logging.h"
 
-#include <Wire.h>
 #include <HardwareSerial.h>
 #include <SPI.h>
+#include <Wire.h>
 
 SPIClass SENSORS_SPI(SENSORS_SPI_MOSI, SENSORS_SPI_MISO, SENSORS_SPI_SCK);
 TwoWire GPS_I2C(GPS_I2C_SDA, GPS_I2C_SCL);
@@ -27,23 +27,16 @@ TwoWire CONNECTOR_I2C(CONNECTOR_I2C_SDA, CONNECTOR_I2C_SCL);
 SPIClass CAMERA_SPI(CAMERA_MOSI, CAMERA_MISO, CAMERA_SCK);
 HardwareSerial RADIO_SERIAL(RADIO_SERIAL_RX, RADIO_SERIAL_TX);
 
-Context ctx {
+Context ctx{
     .asm330 = ASM330(&SENSORS_SPI, SENSORS_ASM_CS),
     .lsm = LSM6(&SENSORS_SPI, SENSORS_LSM_CS),
     .baro = LPS22(&SENSORS_SPI, SENSORS_LPS_CS),
     .mag = LIS2MDL(&SENSORS_SPI, SENSORS_LIS_CS),
 };
 
-
-SensorManager mgr {
-    millis,
-    ctx.asm330,
-    ctx.lsm,
-    ctx.baro,
-    ctx.mag,
-    ctx.gps,
+SensorManager mgr{
+    millis, ctx.asm330, ctx.lsm, ctx.baro, ctx.mag, ctx.gps,
 };
-
 
 StateID currentState;
 StateData data;
@@ -51,305 +44,353 @@ StateData data;
 StateInitFunc initFuncs[NUM_STATES] = {};
 StateLoopFunc loopFuncs[NUM_STATES] = {};
 
+// buffer should be right size
+bool loadConfig(const char *fileName, int numVals, void *buff) {
+  // format string should be in the format of
+  // s = string
+  // f = float
+  // L = int32_t
+  // d = int16_t
+  // c = int8_t
+  // x = int32_t as hex
+  // - = ignore
+  // uL = uint32_t
+  // ud = uint16_t
+  // uc = uint8_t
+  // ux = uint32_t as hex
+  // sd card should be init before this
+
+  if(!SD.exists(filename)) {
+    // file not found, :<
+    Serial.printf("file %s was not found", filename);
+    return false;
+  }
+
+  // write vals into buff in order parsed
+  file = SD.open(filename, FA_READ);
+  if(!file) {
+    Serial.printf("file open fail");
+    return false;
+  }
+  // construct format string
+  // assume all float vals
+  char formatString[512];
+  memset(str, 'f', numVals);
+  formatString[numVals] = '\0';
+  
+  CSV_Parser cp(formatString);
+
+  // read
+  void *out = (void**)buff;
+  int row = 0;
+  while(cp.parseRow()) {
+    for(int i = 0; i < numVals; i++) {
+      float *src = (float*)cp[i];
+      out[row * numVals + i] = src[0]
+    }
+    row++;
+  }
+
+  file.close();
+  return true; 
+}
+
 void initStateData(StateData *data) {
-    data->startTime = millis();
-    data->currentTime = 0;
-    data->deltaTime = 0;
-    data->lastLoopTime = 0;
-    data->loopCount = 0;
+  data->startTime = millis();
+  data->currentTime = 0;
+  data->deltaTime = 0;
+  data->lastLoopTime = 0;
+  data->loopCount = 0;
 };
 
 void updateStateData(StateData *data) {
-    long long now = millis();
-    data->currentTime = now - data->startTime;
-    data->deltaTime = now - data->lastLoopTime;
-    data->lastLoopTime = now;
-    data->loopCount++;
+  long long now = millis();
+  data->currentTime = now - data->startTime;
+  data->deltaTime = now - data->lastLoopTime;
+  data->lastLoopTime = now;
+  data->loopCount++;
 }
 
 void sensorsSetup() {
-    Serial.println("Starting MARS board initialization...");
-    SENSORS_SPI.begin();
+  Serial.println("Starting MARS board initialization...");
+  SENSORS_SPI.begin();
 
-    mgr.sensorInit();
+  mgr.sensorInit();
 
-    Serial.println("\n=== Sensor Initialization Summary ===");
-    Serial.print("Total sensors: ");
-    Serial.println(mgr.count());
-    Serial.println("=== Starting main loop ===\n");
+  Serial.println("\n=== Sensor Initialization Summary ===");
+  Serial.print("Total sensors: ");
+  Serial.println(mgr.count());
+  Serial.println("=== Starting main loop ===\n");
 }
 
 void sensorLoop() {
-    static unsigned long last_print = 0;
-    static int loop_count = 0;
+  static unsigned long last_print = 0;
+  static int loop_count = 0;
 
-    // Update all sensors through manager
-    mgr.loop();
+  // Update all sensors through manager
+  mgr.loop();
 
+  /*
+  if (currentState >= PRELAUNCH) {
+      return;
+  }
+  */
+
+  // manager is not being used here to get data
+  if (millis() - last_print > 200) {
+    last_print = millis();
+    loop_count++;
+
+    Serial.print("\n=== Loop ");
+    Serial.print(loop_count);
+    Serial.println(" ===");
+
+    // DIRECT ACCESS to sensor data - this is guaranteed to work
+    const auto &asm330_desc = ctx.asm330.get_descriptor();
+    const auto &lsm6_desc = ctx.lsm.get_descriptor();
+    const auto &baro_desc = ctx.baro.get_descriptor();
+    const auto &mag_desc = ctx.mag.get_descriptor();
+    // const auto &gps_desc = ctx.gps.get_descriptor();
+    // const auto &curr_desc = ctx.curr.get_descriptor();
+
+    bool has_data = false;
+    // Print ASM330 data
+    if (lsm6_desc.getLastUpdated() > 0) {
+      Serial.print("LSM6DSO - Accel: ");
+      Serial.print(lsm6_desc.data.accel0, 4);
+      Serial.print(", ");
+      Serial.print(lsm6_desc.data.accel1, 4);
+      Serial.print(", ");
+      Serial.print(lsm6_desc.data.accel2, 4);
+      Serial.print(" | Gyro: ");
+      Serial.print(lsm6_desc.data.gyr0, 4);
+      Serial.print(", ");
+      Serial.print(lsm6_desc.data.gyr1, 4);
+      Serial.print(", ");
+      Serial.print(lsm6_desc.data.gyr2, 4);
+      Serial.println();
+      has_data = true;
+    } else {
+      Serial.println("LSM6DSO: No data (timestamp = 0)");
+    }
     /*
-    if (currentState >= PRELAUNCH) {
-        return;
-    }
-    */
 
-    // manager is not being used here to get data
-    if (millis() - last_print > 200)
+    // Print LPS22 data
+    if (baro_desc.getLastUpdated() > 0)
     {
-        last_print = millis();
-        loop_count++;
-
-        Serial.print("\n=== Loop ");
-        Serial.print(loop_count);
-        Serial.println(" ===");
-
-        // DIRECT ACCESS to sensor data - this is guaranteed to work
-        const auto &asm330_desc = ctx.asm330.get_descriptor();
-        const auto &lsm6_desc = ctx.lsm.get_descriptor();
-        const auto &baro_desc = ctx.baro.get_descriptor();
-        const auto &mag_desc = ctx.mag.get_descriptor();
-        // const auto &gps_desc = ctx.gps.get_descriptor();
-        // const auto &curr_desc = ctx.curr.get_descriptor();
-
-        bool has_data = false;
-        // Print ASM330 data
-        if (lsm6_desc.getLastUpdated() > 0)
-        {
-            Serial.print("LSM6DSO - Accel: ");
-            Serial.print(lsm6_desc.data.accel0, 4);
-            Serial.print(", ");
-            Serial.print(lsm6_desc.data.accel1, 4);
-            Serial.print(", ");
-            Serial.print(lsm6_desc.data.accel2, 4);
-            Serial.print(" | Gyro: ");
-            Serial.print(lsm6_desc.data.gyr0, 4);
-            Serial.print(", ");
-            Serial.print(lsm6_desc.data.gyr1, 4);
-            Serial.print(", ");
-            Serial.print(lsm6_desc.data.gyr2, 4);
-            Serial.println();
-            has_data = true;
-        }
-        else
-        {
-            Serial.println("LSM6DSO: No data (timestamp = 0)");
-        }
-        /*
-
-        // Print LPS22 data
-        if (baro_desc.getLastUpdated() > 0)
-        {
-            Serial.print("LPS22 - Pressure: ");
-            Serial.print(baro_desc.data.pressure, 4);
-            Serial.print(" hPa, Temp: ");
-            Serial.print(baro_desc.data.temp, 4);
-            Serial.println(" C");
-            has_data = true;
-        }
-        else
-        {
-            Serial.println("LPS22: No data (timestamp = 0)");
-        }
-
-        if(mag_desc.getLastUpdated()  > 0)
-        {
-            Serial.print("ICM20948 - Accel: ");
-            Serial.print(mag_desc.data.accel0, 4);
-            Serial.print(", ");
-            Serial.print(mag_desc.data.accel1, 4);
-            Serial.print(", ");
-            Serial.print(mag_desc.data.accel2, 4);
-            Serial.print(" | Gyro: ");
-            Serial.print(mag_desc.data.gyr0, 4);
-            Serial.print(", ");
-            Serial.print(mag_desc.data.gyr1, 4);
-            Serial.print(", ");
-            Serial.print(mag_desc.data.gyr2, 4);
-            Serial.print(" | Mag: ");
-            Serial.print(mag_desc.data.mag0, 4);
-            Serial.print(", ");
-            Serial.print(mag_desc.data.mag1, 4);
-            Serial.print(", ");
-            Serial.print(mag_desc.data.mag2, 4);
-            Serial.println();
-            has_data = true;
-        }
-        else
-        {
-            Serial.println("ICM20948: No data (timestamp = 0)");
-        }
-
-        if(gps_desc.getLastUpdated() > 0)
-        {
-            Serial.print("MAX10S - Lat, Lon, AltMSL, AltElipsoid: ");
-            Serial.print(gps_desc.data.lat, 4);
-            Serial.print(", ");
-            Serial.print(gps_desc.data.lon, 4);
-            Serial.print(", ");
-            Serial.print(gps_desc.data.altMSL, 4);
-            Serial.print(", ");
-            Serial.print(gps_desc.data.altEllipsoid, 4);
-            Serial.print("| GPS Lock Type - ");
-            Serial.print(gps_desc.data.gpsLockType);
-            Serial.println();
-            has_data = true;
-        }
-        else
-        {
-            Serial.println("MAX10S: No data (timestamp = 0)");
-        }
-
-        if(curr_desc.getLastUpdated() > 0) {
-            Serial.print("INA219 - Curr: ");
-            Serial.println(curr_desc.data.curr, 4);
-            has_data = true;
-        } else {
-            Serial.println("INA219: No data (timestamp = 0)");
-        }
-
-        if (!has_data)
-        {
-            Serial.println("No sensor data received yet...");
-        }
-
-        Serial.println("======================");
-        */
+        Serial.print("LPS22 - Pressure: ");
+        Serial.print(baro_desc.data.pressure, 4);
+        Serial.print(" hPa, Temp: ");
+        Serial.print(baro_desc.data.temp, 4);
+        Serial.println(" C");
+        has_data = true;
     }
+    else
+    {
+        Serial.println("LPS22: No data (timestamp = 0)");
+    }
+
+    if(mag_desc.getLastUpdated()  > 0)
+    {
+        Serial.print("ICM20948 - Accel: ");
+        Serial.print(mag_desc.data.accel0, 4);
+        Serial.print(", ");
+        Serial.print(mag_desc.data.accel1, 4);
+        Serial.print(", ");
+        Serial.print(mag_desc.data.accel2, 4);
+        Serial.print(" | Gyro: ");
+        Serial.print(mag_desc.data.gyr0, 4);
+        Serial.print(", ");
+        Serial.print(mag_desc.data.gyr1, 4);
+        Serial.print(", ");
+        Serial.print(mag_desc.data.gyr2, 4);
+        Serial.print(" | Mag: ");
+        Serial.print(mag_desc.data.mag0, 4);
+        Serial.print(", ");
+        Serial.print(mag_desc.data.mag1, 4);
+        Serial.print(", ");
+        Serial.print(mag_desc.data.mag2, 4);
+        Serial.println();
+        has_data = true;
+    }
+    else
+    {
+        Serial.println("ICM20948: No data (timestamp = 0)");
+    }
+
+    if(gps_desc.getLastUpdated() > 0)
+    {
+        Serial.print("MAX10S - Lat, Lon, AltMSL, AltElipsoid: ");
+        Serial.print(gps_desc.data.lat, 4);
+        Serial.print(", ");
+        Serial.print(gps_desc.data.lon, 4);
+        Serial.print(", ");
+        Serial.print(gps_desc.data.altMSL, 4);
+        Serial.print(", ");
+        Serial.print(gps_desc.data.altEllipsoid, 4);
+        Serial.print("| GPS Lock Type - ");
+        Serial.print(gps_desc.data.gpsLockType);
+        Serial.println();
+        has_data = true;
+    }
+    else
+    {
+        Serial.println("MAX10S: No data (timestamp = 0)");
+    }
+
+    if(curr_desc.getLastUpdated() > 0) {
+        Serial.print("INA219 - Curr: ");
+        Serial.println(curr_desc.data.curr, 4);
+        has_data = true;
+    } else {
+        Serial.println("INA219: No data (timestamp = 0)");
+    }
+
+    if (!has_data)
+    {
+        Serial.println("No sensor data received yet...");
+    }
+
+    Serial.println("======================");
+    */
+  }
 }
 
 void setup() {
-    currentState = PRELAUNCH;
-    data = {};
+  currentState = PRELAUNCH;
+  data = {};
 
-    initFuncs[PRELAUNCH] = &prelaunchInit;
-    initFuncs[BOOST] = &boostInit;
-    initFuncs[COAST] = &coastInit;
-    initFuncs[DROGUE_DESCENT] = &drogueDescentInit;
-    initFuncs[MAIN_DESCENT] = &mainDescentInit;
-    initFuncs[RECOVERY] = &recoveryInit;
-    initFuncs[ABORT] = &abortInit;
+  initFuncs[PRELAUNCH] = &prelaunchInit;
+  initFuncs[BOOST] = &boostInit;
+  initFuncs[COAST] = &coastInit;
+  initFuncs[DROGUE_DESCENT] = &drogueDescentInit;
+  initFuncs[MAIN_DESCENT] = &mainDescentInit;
+  initFuncs[RECOVERY] = &recoveryInit;
+  initFuncs[ABORT] = &abortInit;
 
-    loopFuncs[PRELAUNCH] = &prelaunchLoop;
-    loopFuncs[BOOST] = &boostLoop;
-    loopFuncs[COAST] = &coastLoop;
-    loopFuncs[DROGUE_DESCENT] = &drogueDescentLoop;
-    loopFuncs[MAIN_DESCENT] = &mainDescentLoop;
-    loopFuncs[RECOVERY] = &recoveryLoop;
-    loopFuncs[ABORT] = &abortLoop;
+  loopFuncs[PRELAUNCH] = &prelaunchLoop;
+  loopFuncs[BOOST] = &boostLoop;
+  loopFuncs[COAST] = &coastLoop;
+  loopFuncs[DROGUE_DESCENT] = &drogueDescentLoop;
+  loopFuncs[MAIN_DESCENT] = &mainDescentLoop;
+  loopFuncs[RECOVERY] = &recoveryLoop;
+  loopFuncs[ABORT] = &abortLoop;
 
-    pinMode(LED_BLUE, OUTPUT);
-    pinMode(LED_GREEN, OUTPUT);
-    pinMode(LED_RED, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_RED, OUTPUT);
 
-    Serial.begin(115200);
-    while(!Serial) {
-        delay(10);
-    }
-    
-    // NOTE: Run initialization on the first state
-    initStateData(&data);
-    (*initFuncs[currentState])(&data);
-    sensorsSetup();
-    ctx.ekfLooping = false;
-    ctx.sdInitialized = initializeLogging(&ctx);
+  Serial.begin(115200);
+  while (!Serial) {
+    delay(10);
+  }
 
-    // ctx.airBrakes.attach(SERVO_PIN);
-    // ctx.airBrakes.writeMicroseconds(SERVO_MIN);
+  // NOTE: Run initialization on the first state
+  initStateData(&data);
+  (*initFuncs[currentState])(&data);
+  sensorsSetup();
+  ctx.ekfLooping = false;
+  ctx.sdInitialized = initializeLogging(&ctx);
 
-    ctx.estimator = StateEstimator();
-    
-    BLA::Matrix<3, 1> ecef = {0, 0, 0};
-    // ctx.estimator.init(ecef, millis());
+  // ctx.airBrakes.attach(SERVO_PIN);
+  // ctx.airBrakes.writeMicroseconds(SERVO_MIN);
+
+  ctx.estimator = StateEstimator();
+
+  BLA::Matrix<3, 1> ecef = {0, 0, 0};
+  // ctx.estimator.init(ecef, millis());
 }
 
 void ekfLoop(Context *ctx) {
-    static uint32_t last_accel_time = 0;
-    static uint32_t last_mag_time = 0;
-    static uint32_t last_gps_time = 0;
-    static uint32_t last_baro_time = 0;
+  static uint32_t last_accel_time = 0;
+  static uint32_t last_mag_time = 0;
+  static uint32_t last_gps_time = 0;
+  static uint32_t last_baro_time = 0;
 
-    uint32_t now = millis();
+  uint32_t now = millis();
 
-    const auto &asm330_desc = ctx->asm330.get_descriptor();
-    const auto &baro_desc = ctx->baro.get_descriptor();
-    const auto &mag_desc = ctx->mag.get_descriptor();
-    const auto &gps_desc = ctx->gps.get_descriptor();
+  const auto &asm330_desc = ctx->asm330.get_descriptor();
+  const auto &baro_desc = ctx->baro.get_descriptor();
+  const auto &mag_desc = ctx->mag.get_descriptor();
+  const auto &gps_desc = ctx->gps.get_descriptor();
 
-    bool inAir = currentState == BOOST ||
-                 currentState == COAST ||
-                 currentState == DROGUE_DESCENT ||
-                 currentState == MAIN_DESCENT;
+  bool inAir = currentState == BOOST || currentState == COAST ||
+               currentState == DROGUE_DESCENT || currentState == MAIN_DESCENT;
 
-    // Accel and gyro becuase they are on the same sensor
-    if(asm330_desc.getLastUpdated() > last_accel_time) {
-        BLA::Matrix<3, 1> gyro = {asm330_desc.data.gyr0, asm330_desc.data.gyr1, asm330_desc.data.gyr2};
-        ctx->estimator.fastGyroProp(gyro, now);
+  // Accel and gyro becuase they are on the same sensor
+  if (asm330_desc.getLastUpdated() > last_accel_time) {
+    BLA::Matrix<3, 1> gyro = {asm330_desc.data.gyr0, asm330_desc.data.gyr1,
+                              asm330_desc.data.gyr2};
+    ctx->estimator.fastGyroProp(gyro, now);
 
-        BLA::Matrix<3, 1> accel = {asm330_desc.data.accel0, asm330_desc.data.accel1, asm330_desc.data.accel2};
-        ctx->estimator.fastAccelProp(accel, now);
+    BLA::Matrix<3, 1> accel = {asm330_desc.data.accel0, asm330_desc.data.accel1,
+                               asm330_desc.data.accel2};
+    ctx->estimator.fastAccelProp(accel, now);
+  }
+
+  if (inAir) {
+    if (baro_desc.getLastUpdated() > last_baro_time ||
+        mag_desc.getLastUpdated() > last_mag_time ||
+        gps_desc.getLastUpdated() > last_gps_time) {
+      ctx->estimator.ekfPredict(now);
     }
-
-    if(inAir) {
-        if(baro_desc.getLastUpdated() > last_baro_time ||
-           mag_desc.getLastUpdated() > last_mag_time ||
-           gps_desc.getLastUpdated() > last_gps_time) {
-            ctx->estimator.ekfPredict(now); 
-        }
-    } else {
-        if(asm330_desc.getLastUpdated() > last_accel_time ||
-           baro_desc.getLastUpdated() > last_baro_time ||
-           mag_desc.getLastUpdated() > last_mag_time ||
-           gps_desc.getLastUpdated() > last_gps_time) {
-            ctx->estimator.ekfPredict(now); 
-        }
+  } else {
+    if (asm330_desc.getLastUpdated() > last_accel_time ||
+        baro_desc.getLastUpdated() > last_baro_time ||
+        mag_desc.getLastUpdated() > last_mag_time ||
+        gps_desc.getLastUpdated() > last_gps_time) {
+      ctx->estimator.ekfPredict(now);
     }
+  }
 
-    if(asm330_desc.getLastUpdated() > last_accel_time) {
-        last_accel_time = asm330_desc.getLastUpdated();
-        BLA::Matrix<3, 1> accel = {asm330_desc.data.accel0, asm330_desc.data.accel1, asm330_desc.data.accel2};
-        ctx->estimator.runAccelUpdate(accel, now);
-    }
+  if (asm330_desc.getLastUpdated() > last_accel_time) {
+    last_accel_time = asm330_desc.getLastUpdated();
+    BLA::Matrix<3, 1> accel = {asm330_desc.data.accel0, asm330_desc.data.accel1,
+                               asm330_desc.data.accel2};
+    ctx->estimator.runAccelUpdate(accel, now);
+  }
 
-    if (baro_desc.getLastUpdated() > last_baro_time)
-    {
-        last_baro_time = baro_desc.getLastUpdated();
-        BLA::Matrix<1, 1> baro = {baro_desc.data.pressure};
-        ctx->estimator.runBaroUpdate(baro, now);
-        ctx->estimator.setTemp(baro_desc.data.temp);
-    }
+  if (baro_desc.getLastUpdated() > last_baro_time) {
+    last_baro_time = baro_desc.getLastUpdated();
+    BLA::Matrix<1, 1> baro = {baro_desc.data.pressure};
+    ctx->estimator.runBaroUpdate(baro, now);
+    ctx->estimator.setTemp(baro_desc.data.temp);
+  }
 
-    if (mag_desc.getLastUpdated() > last_mag_time)
-    {
-        last_mag_time = mag_desc.getLastUpdated();
-        BLA::Matrix<3, 1> mag = {mag_desc.data.mag0, mag_desc.data.mag1, mag_desc.data.mag2};
-        ctx->estimator.runMagUpdate(mag, now);
-    }
+  if (mag_desc.getLastUpdated() > last_mag_time) {
+    last_mag_time = mag_desc.getLastUpdated();
+    BLA::Matrix<3, 1> mag = {mag_desc.data.mag0, mag_desc.data.mag1,
+                             mag_desc.data.mag2};
+    ctx->estimator.runMagUpdate(mag, now);
+  }
 
-    // if (gps_desc.getLastUpdated() > last_gps_time)
-    // {
-    //     last_gps_time = gps_desc.getLastUpdated();
-    //     BLA::Matrix<3, 1> gpsPos = {gps_desc.data.ecefX, gps_desc.data.ecefY, gps_desc.data.ecefZ};
-    //     BLA::Matrix<3, 1> gpsVel = {gps_desc.data.velN, gps_desc.data.velE, gps_desc.data.velD};
-    //     ctx->estimator.runGPSUpdate(gpsPos, gpsVel, false, now);
-    // }
+  // if (gps_desc.getLastUpdated() > last_gps_time)
+  // {
+  //     last_gps_time = gps_desc.getLastUpdated();
+  //     BLA::Matrix<3, 1> gpsPos = {gps_desc.data.ecefX, gps_desc.data.ecefY,
+  //     gps_desc.data.ecefZ}; BLA::Matrix<3, 1> gpsVel = {gps_desc.data.velN,
+  //     gps_desc.data.velE, gps_desc.data.velD};
+  //     ctx->estimator.runGPSUpdate(gpsPos, gpsVel, false, now);
+  // }
 }
 
 void loop() {
 
-    updateStateData(&data);
-    StateID newState = (*loopFuncs[currentState])(&data, &ctx);
+  updateStateData(&data);
+  StateID newState = (*loopFuncs[currentState])(&data, &ctx);
 
-    if(currentState != newState) {
-        initStateData(&data);
-        (*initFuncs[newState])(&data);
-        currentState = newState;
-        ctx.errorLogFile.printf("%d %d\n", newState, millis());
-    }
+  if (currentState != newState) {
+    initStateData(&data);
+    (*initFuncs[newState])(&data);
+    currentState = newState;
+    ctx.errorLogFile.printf("%d %d\n", newState, millis());
+  }
 
-    sensorLoop();
+  sensorLoop();
 
-    if(ctx.ekfLooping) {
-        ekfLoop(&ctx);
-    }
+  if (ctx.ekfLooping) {
+    ekfLoop(&ctx);
+  }
 
-    loggingLoop(&ctx);
+  loggingLoop(&ctx);
 }
