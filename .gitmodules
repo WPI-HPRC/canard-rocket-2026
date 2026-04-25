@@ -15,4 +15,4 @@
 	url = https://github.com/wpi-hprc/LoRaE22
 [submodule "src/canard_lqr_controller"]
 	path = src/canard_lqr_controller
-	url = git@github.com:WPI-HPRC/canard_lqr_controller.git
+	url = https://github.com/wpi-hprc/canard_lqr_controller
