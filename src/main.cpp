@@ -30,7 +30,7 @@
 
 #include "LoRaE22.h"
 #include "RadioConfig.h"
-
+#include <Servo.h>
 #include <HardwareSerial.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -254,10 +254,14 @@ void radioLoop() {
 
 void initCanardServos() {
   Log.infoln("Beginning encoders");
-  // ctx.encoder1.begin();
-  // ctx.encoder2.begin();
-  // ctx.encoder3.begin();
-  // ctx.encoder4.begin();
+  ctx.encoder1.begin();
+  ctx.encoder2.begin();
+  ctx.encoder3.begin();
+  ctx.encoder4.begin();
+  ctx.c1.attach(SERVO1_PWM);
+  ctx.c2.attach(SERVO2_PWM);                                               
+  ctx.c3.attach(SERVO3_PWM);                                               
+  ctx.c4.attach(SERVO4_PWM);
 }
 
 void initStateData(StateData *data) {

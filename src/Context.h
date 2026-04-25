@@ -19,6 +19,7 @@ struct LPS22Data;
 struct ICMData;
 struct MAX10SData;
 struct INA219Data;
+struct canards; 
 
 struct Context {
     File logFile;
@@ -46,10 +47,15 @@ struct Context {
 
     LoRaE22 radio;
 
-    // PwmInput encoder1 = PwmInput(ENCODER1_PWM);
-    // PwmInput encoder2 = PwmInput(ENCODER2_PWM);
-    // PwmInput encoder3 = PwmInput(ENCODER3_PWM);
-    // PwmInput encoder4 = PwmInput(ENCODER4_PWM);
+    PwmInput encoder1 = PwmInput(ENCODER1_PWM);
+    PwmInput encoder2 = PwmInput(ENCODER2_PWM);
+    PwmInput encoder3 = PwmInput(ENCODER3_PWM);
+    PwmInput encoder4 = PwmInput(ENCODER4_PWM);
+
+    Servo c1; 
+    Servo c2; 
+    Servo c3; 
+    Servo c4; 
     
     SplitStateEstimator estimator;
 };
