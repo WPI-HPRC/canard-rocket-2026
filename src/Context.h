@@ -27,20 +27,29 @@ struct Context {
     bool sdInitialized;
     bool ekfLooping;
 
-    // MockASM330 asm330;
-    ASM330 asm330;
+    #if defined(MOCK_SENSORS) && defined(ASM_DATA_FILENAME) && defined(ASM_DATA_RATE)
+        MockASM330 asm330;
+    #else
+        ASM330 asm330;
+    #endif
+
     LSM6 lsm;
     LPS22 baro;
-    // MockLIS2MDL mag;
-    LIS2MDL mag;
+
+    #if defined(MOCK_SENSORS) && defined(LIS_DATA_FILENAME) && defined(LIS_DATA_RATE)
+        MockLIS2MDL mag;
+    #else
+        LIS2MDL mag;
+    #endif
+
     LIV3F gps;
 
     LoRaE22 radio;
 
-    PwmInput encoder1 = PwmInput(ENCODER1_PWM);
-    PwmInput encoder2 = PwmInput(ENCODER2_PWM);
-    PwmInput encoder3 = PwmInput(ENCODER3_PWM);
-    PwmInput encoder4 = PwmInput(ENCODER4_PWM);
+    // PwmInput encoder1 = PwmInput(ENCODER1_PWM);
+    // PwmInput encoder2 = PwmInput(ENCODER2_PWM);
+    // PwmInput encoder3 = PwmInput(ENCODER3_PWM);
+    // PwmInput encoder4 = PwmInput(ENCODER4_PWM);
     
     SplitStateEstimator estimator;
 };

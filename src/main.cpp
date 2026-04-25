@@ -1,14 +1,15 @@
-#define RADIO_DEBUG
+#include "config.h"
+
+#include <Arduino.h>
 
 #include "Context.h"
+
+#include "Packet_generated.h"
+#include "Sensors_generated.h"
 #include "RemoteControl_generated.h"
 #include "RocketCanardsTelemetryPacket_generated.h"
-#include "boilerplate/Sensors/Impl/LIV3F.h"
-#include "boilerplate/Sensors/Mock/ASM330.h"
-#include "boilerplate/Sensors/Mock/LIS2MDLTR.h"
-#include "boilerplate/Sensors/Mock/LSM6.h"
 #include "flatbuffers/buffer.h"
-#include <Arduino.h>
+
 #ifdef __has_include
 #if __has_include("states/States.h")
 #include "State.h"
@@ -23,17 +24,12 @@
 #include "template_states/States.h"
 #endif
 
-#include "boilerplate/Sensors/Impl/ASM330.h"
 #include "boilerplate/Sensors/SensorManager/SensorManager.h"
 
 #include "logging.h"
 
 #include "LoRaE22.h"
 #include "RadioConfig.h"
-
-#include "Packet_generated.h"
-#include "Sensors_generated.h"
-#include "flatbuffers/flatbuffers.h"
 
 #include <HardwareSerial.h>
 #include <SPI.h>
@@ -47,12 +43,18 @@ SPIClass CAMERA_SPI(CAMERA_MOSI, CAMERA_MISO, CAMERA_SCK);
 HardwareSerial RADIO_SERIAL(RADIO_SERIAL_RX, RADIO_SERIAL_TX);
 
 Context ctx{
-    .asm330 = ASM330(&SENSORS_SPI, SENSORS_ASM_CS),
-    // .asm330 = MockASM330("imu_corr.csv", 1000),
+    #if defined(MOCK_SENSORS) && defined(ASM_DATA_FILENAME) && defined(ASM_DATA_RATE)
+      .asm330 = MockASM330(ASM_DATA_FILENAME, ASM_DATA_RATE),
+    #else
+      .asm330 = ASM330(&SENSORS_SPI, SENSORS_ASM_CS),
+    #endif
     .lsm = LSM6(&SENSORS_SPI, SENSORS_LSM_CS),
     .baro = LPS22(&SENSORS_SPI, SENSORS_LPS_CS),
-    .mag = LIS2MDL(&SENSORS_SPI, SENSORS_LIS_CS),
-    // .mag = MockLIS2MDL("mag_corr.csv", 1000),
+    #if defined(MOCK_SENSORS) && defined(LIS_DATA_FILENAME) && defined(LIS_DATA_RATE)
+      .mag = MockLIS2MDL(LIS_DATA_FILENAME, LIS_DATA_RATE),
+    #else
+      .mag = LIS2MDL(&SENSORS_SPI, SENSORS_LIS_CS),
+    #endif
     .gps = LIV3F(GPS_SERIAL),
     .radio = LoRaE22(&RADIO_SERIAL, RADIO_M0, RADIO_M1, RADIO_AUX, "KV0R"),
 };
@@ -392,7 +394,13 @@ void setup() {
 
   ctx.sdInitialized = initializeLogging(&ctx);
 
+#if DEBUG_MODE == 0
   Log.begin(LOG_LEVEL_INFO, &ctx.debugLogFile);
+#elif DEBUG_MODE == 1
+  Log.begin(LOG_LEVEL_INFO, &Serial);
+#else
+  Log.begin(LOG_LEVEL_TRACE, &Serial);
+#endif
   Log.setPrefix([](Print *p, int level) { p->printf("[ %d ] ", millis()); });
 
 
