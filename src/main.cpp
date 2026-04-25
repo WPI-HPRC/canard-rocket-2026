@@ -262,6 +262,7 @@ void initCanardServos() {
   ctx.c2.attach(SERVO2_PWM);                                               
   ctx.c3.attach(SERVO3_PWM);                                               
   ctx.c4.attach(SERVO4_PWM);
+  //Set canards to 0 deg? 
 }
 
 void initStateData(StateData *data) {
