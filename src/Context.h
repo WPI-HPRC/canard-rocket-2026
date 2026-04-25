@@ -25,6 +25,7 @@ struct Context {
     File logFile;
     File debugLogFile;
     File ekfLogFile;
+    File errorLogFile; 
     bool sdInitialized;
     bool ekfLooping;
 

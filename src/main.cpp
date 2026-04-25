@@ -190,11 +190,11 @@ void radioInit() {
   Serial.println(code);
 #endif
 }
-
+float ekfStartTime;
 void radioLoop() {
-  static flatbuffers::FlatBufferBuilder builder;
-  static uint8_t rxBuff[1024];
-  static ssize_t lastCmdNum = -1;
+  // static flatbuffers::FlatBufferBuilder builder;
+  // static uint8_t rxBuff[1024];
+  // static ssize_t lastCmdNum = -1;
   static uint32_t lastRadioSendTime = 0;
 
   ctx.radio.update();
@@ -207,48 +207,76 @@ void radioLoop() {
     const auto &mag_desc = ctx.mag.get_descriptor();
     const auto &gps_desc = ctx.gps.get_descriptor();
 
-    hprc::Sensors sensors = hprc::Sensors(
-        asm330_desc.data.accel0, asm330_desc.data.accel1,
-        asm330_desc.data.accel2, asm330_desc.data.gyr0, asm330_desc.data.gyr1,
-        asm330_desc.data.gyr2, lsm6_desc.data.accel0, lsm6_desc.data.accel1,
-        lsm6_desc.data.accel2, lsm6_desc.data.gyr0, lsm6_desc.data.gyr1,
-        lsm6_desc.data.gyr2, mag_desc.data.mag0, mag_desc.data.mag1,
-        mag_desc.data.mag2, baro_desc.data.pressure, baro_desc.data.temp);
+    RADIO_SERIAL.print("KV0R");
 
-    builder.Clear();
+    RADIO_SERIAL.print("Quaternion: ");
+    auto q = ctx.estimator.get_quat_ned();
+    RADIO_SERIAL.print(q(0)); RADIO_SERIAL.print(", "); 
+    RADIO_SERIAL.print(q(1)); RADIO_SERIAL.print(", ");
+    RADIO_SERIAL.print(q(2)); RADIO_SERIAL.print(", ");
+    RADIO_SERIAL.println(q(0));
 
-    flatbuffers::Offset<hprc::RocketCanardsTelemetryPacket> packetInner =
-        hprc::CreateRocketCanardsTelemetryPacket(builder, nullptr,
-                                                 hprc::States_Start, &sensors);
+    BLA::Matrix<3, 1> gb = ctx.estimator.get_gyro_bias();
+    RADIO_SERIAL.print("Gyro Bias: ");
+    RADIO_SERIAL.print(gb(0, 0), 8);
+    RADIO_SERIAL.print(gb(1, 0), 8);
+    RADIO_SERIAL.println(gb(2, 0), 8);
 
-    flatbuffers::Offset<hprc::Packet> packet = hprc::CreatePacket(
-        builder, hprc::PacketUnion_RocketCanardsTelemetryPacket,
-        packetInner.Union());
+    // hprc::Sensors sensors = hprc::Sensors(
+    //     asm330_desc.data.accel0, asm330_desc.data.accel1,
+    //     asm330_desc.data.accel2, asm330_desc.data.gyr0, asm330_desc.data.gyr1,
+    //     asm330_desc.data.gyr2, lsm6_desc.data.accel0, lsm6_desc.data.accel1,
+    //     lsm6_desc.data.accel2, lsm6_desc.data.gyr0, lsm6_desc.data.gyr1,
+    //     lsm6_desc.data.gyr2, mag_desc.data.mag0, mag_desc.data.mag1,
+    //     mag_desc.data.mag2, baro_desc.data.pressure, baro_desc.data.temp);
 
-    builder.Finish(packet);
+    // builder.Clear();
 
-    ctx.radio.sendMessage(builder.GetBufferPointer(), builder.GetSize());
+    // flatbuffers::Offset<hprc::RocketCanardsTelemetryPacket> packetInner =
+    //     hprc::CreateRocketCanardsTelemetryPacket(builder, nullptr,
+    //                                              hprc::States_Start, &sensors);
+
+    // flatbuffers::Offset<hprc::Packet> packet = hprc::CreatePacket(
+    //     builder, hprc::PacketUnion_RocketCanardsTelemetryPacket,
+    //     packetInner.Union());
+
+    // builder.Finish(packet);
+
+    // ctx.radio.sendMessage(builder.GetBufferPointer(), builder.GetSize());
   }
 
-  if (ctx.radio.hasMessage()) {
-    uint8_t bytesRead;
-    ctx.radio.getMessage(rxBuff, 1024, bytesRead);
+  // if (ctx.radio.hasMessage()) {
+  //   uint8_t bytesRead;
+  //   ctx.radio.getMessage(rxBuff, 1024, bytesRead);
 
-    const hprc::Packet *packet = hprc::GetPacket(rxBuff);
-    if (packet->packet_type() != hprc::PacketUnion_RemoteControl) {
-      Log.errorln("Recieved wrong packet type: %d", packet->packet_type());
+  //   const hprc::Packet *packet = hprc::GetPacket(rxBuff);
+  //   if (packet->packet_type() != hprc::PacketUnion_RemoteControl) {
+  //     Log.errorln("Recieved wrong packet type: %d", packet->packet_type());
+  //   }
+  //   const auto command = static_cast<const hprc::RemoteControlCommand *>(
+  //       packet->packet_as_RemoteControl());
+  //   if (lastCmdNum >= command->command_number()) {
+  //     Log.errorln("Received old packet number: %d (expecting > %d)",
+  //                 command->command_number(), lastCmdNum);
+  //   }
+  //   lastCmdNum = command->command_number();
+
+  //   Log.traceln("Received cmd: %d (#%d)", command->command(), command->command_number());
+
+  //   handleCommand(command->command());
+  // }
+
+ 
+
+  if(RADIO_SERIAL.available() > 0){
+    uint8_t command = RADIO_SERIAL.read();
+    if(command == 's'){
+        ekfStartTime = millis() / 1000.0f;
+        ctx.ekfLooping = true;
     }
-    const auto command = static_cast<const hprc::RemoteControlCommand *>(
-        packet->packet_as_RemoteControl());
-    if (lastCmdNum >= command->command_number()) {
-      Log.errorln("Received old packet number: %d (expecting > %d)",
-                  command->command_number(), lastCmdNum);
+    else{
+      // kill canards
     }
-    lastCmdNum = command->command_number();
-
-    Log.traceln("Received cmd: %d (#%d)", command->command(), command->command_number());
-
-    handleCommand(command->command());
   }
 }
 
@@ -376,8 +404,6 @@ void sensorLoop() {
   }
 }
 
-float ekfStartTime;
-
 void setup() {
   currentState = PRELAUNCH;
   data = {};
@@ -418,12 +444,9 @@ void setup() {
 
   initCanardServos();
 
-  ctx.ekfLooping = true;
+  ctx.ekfLooping = false;
 
-  ctx.estimator = SplitStateEstimator();
   ctx.estimator.init(millis() / 1000.0f, {0, 0, 0}, {0, 0, 0});
-
-  ekfStartTime = millis() / 1000.0f;
 
   digitalWrite(LED_GREEN, HIGH);
   Log.infoln("=== Starting main loop ===\n");
@@ -514,37 +537,27 @@ void ekfLoop(Context *ctx) {
       // ctx->estimator.reorient_lis(mag), t , 100.0);
       lastCalcTimes(0, 0) = t;
     }
-  } else if (state == 3) {
-    if (t - lastCalcTimes(0, 0) >= runRates(0, 0)) {
-
-      ctx->estimator.fastGyroProp(ctx->estimator.reorient_asm(gyro), t);
-      ctx->estimator.AttekfPredict(t);
-      ctx->estimator.runMagUpdate(ctx->estimator.reorient_lis(mag), t);
-
-      lastCalcTimes(0, 0) = t;
-      // SerialUSB.println("GYRO PROPPING");
-    }
   }
 
-  // auto quat = ctx->estimator.get_quat_ned();
-  // auto gb = ctx->estimator.get_gyro_bias();
+  auto quat = ctx->estimator.get_quat_ned();
+  auto gb = ctx->estimator.get_gyro_bias();
 
-  // ctx->errorLogFile.print(millis());
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(quat(0), 8);
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(quat(1), 8);
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(quat(2), 8);
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(quat(3), 8);
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(gb(0), 8);
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(gb(1), 8);
-  // ctx->errorLogFile.print(',');
-  // ctx->errorLogFile.print(gb(2), 8);
-  // ctx->errorLogFile.println();
+  ctx->errorLogFile.print(millis());
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(0), 8);
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(1), 8);
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(2), 8);
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(3), 8);
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(gb(0), 8);
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(gb(1), 8);
+  ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(gb(2), 8);
+  ctx->errorLogFile.println();
 
   // static uint32_t lastFlushTime = 0;
   // if (millis() - lastFlushTime >= 1000) {
