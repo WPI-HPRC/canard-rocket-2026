@@ -1,6 +1,3 @@
-#ifdef __has_include
-#if !__has_include("states/States.h")
-#define TEMPLATE_STATES_OVERRIDE
 #include "../State.h"
 
 void abortInit (StateData* data) {}
@@ -8,5 +5,3 @@ void abortInit (StateData* data) {}
 StateID abortLoop (StateData *data, Context *ctx) {
     return ABORT; // this is what code from last year was doing, may need to do more
 }
-#endif
-#endif

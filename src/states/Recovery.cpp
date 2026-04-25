@@ -1,6 +1,3 @@
-#ifdef __has_include
-#if !__has_include("states/States.h")
-#define TEMPLATE_STATES_OVERRIDE
 #include "../State.h"
 
 void recoveryInit(StateData *data) {}
@@ -8,5 +5,3 @@ void recoveryInit(StateData *data) {}
 StateID recoveryLoop (StateData* data, Context* ctx) {
     return RECOVERY; 
 }
-#endif
-#endif

@@ -1,3 +1,5 @@
+#ifdef __has_include
+#if !__has_include("states/States.h")
 #define TEMPLATE_STATES_OVERRIDE
 #include "../State.h"
 #include "Arduino.h"
@@ -84,3 +86,5 @@ StateID prelaunchLoop(StateData *data, Context *ctx) {
 
   return PRELAUNCH;
 }
+#endif
+#endif

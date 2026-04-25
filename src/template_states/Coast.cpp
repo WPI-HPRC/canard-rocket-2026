@@ -1,3 +1,5 @@
+#ifdef __has_include
+#if !__has_include("states/States.h")
 #define TEMPLATE_STATES_OVERRIDE
 #include "../State.h"
 
@@ -34,3 +36,5 @@ StateID coastLoop (StateData* data, Context* ctx) {
 
     return COAST;
 }
+#endif
+#endif

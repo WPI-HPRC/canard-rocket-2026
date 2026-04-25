@@ -1,3 +1,5 @@
+#ifdef __has_include
+  #if !__has_include("states/States.h")
 #define TEMPLATE_STATES_OVERRIDE
 #include "../State.h"
 #include "StateMachineConstants.h"
@@ -24,3 +26,5 @@ StateID boostLoop (StateData* data, Context* ctx) {
 
     return BOOST;
 }
+#endif
+#endif

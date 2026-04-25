@@ -1,3 +1,5 @@
+#ifdef __has_include
+#if !__has_include("states/States.h")
 #define TEMPLATE_STATES_OVERRIDE
 #include "../State.h"
 
@@ -15,3 +17,5 @@ StateID mainDescentLoop (StateData* data, Context* ctx) {
 
     return MAIN_DESCENT;
 }
+#endif
+#endif

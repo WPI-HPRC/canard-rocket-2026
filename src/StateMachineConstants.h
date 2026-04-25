@@ -1,17 +1,7 @@
 #pragma once
 
-constexpr float LAUNCH_TRHESHOLD = 5;
+#include <cstdint>
+constexpr float PRELAUNCH_TO_BOOST_MIN_ACCEL = 5 * 9.81; // m/s^2
 
-constexpr float COAST_THRESHOLD = 0.3f;
-
-constexpr float MAIN_MIN_VEL = 5;
-
-constexpr float MAIN_MAX_VEL = 9;
-
-constexpr float BOOST_TIMEOUT = 0.0f;
-
-constexpr float COAST_TIMEOUT = 0.0f;
-
-constexpr float DROGUE_DESCENT_TIMEOUT = 0.0f;
-
-constexpr float MAIN_DESCENT_TIMEOUT = 0.0f;
+constexpr float BOOST_TO_COST_ACCEL_EPSILON = 0.3f; // m/s^2
+constexpr uint32_t MAX_MOTOR_BURN_TIME = 2000; // ms
