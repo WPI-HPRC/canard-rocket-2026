@@ -130,7 +130,7 @@ void loggingLoop(Context *ctx) {
     auto packet = hprc::CreateSDPacket(
         builder, millis(), hprc::SensorData_ASM330, sensorData.Union());
 
-    builder.Finish(packet);
+    builder.FinishSizePrefixed(packet);
 
     ctx->logFile.write(builder.GetBufferPointer(), builder.GetSize());
   }
@@ -150,7 +150,7 @@ void loggingLoop(Context *ctx) {
     auto packet = hprc::CreateSDPacket(builder, millis(), hprc::SensorData_LSM6,
                                        sensorData.Union());
 
-    builder.Finish(packet);
+    builder.FinishSizePrefixed(packet);
 
     ctx->logFile.write(builder.GetBufferPointer(), builder.GetSize());
   }
@@ -168,7 +168,7 @@ void loggingLoop(Context *ctx) {
     auto packet = hprc::CreateSDPacket(
         builder, millis(), hprc::SensorData_LPS22, sensorData.Union());
 
-    builder.Finish(packet);
+    builder.FinishSizePrefixed(packet);
 
     ctx->logFile.write(builder.GetBufferPointer(), builder.GetSize());
   }
@@ -187,7 +187,7 @@ void loggingLoop(Context *ctx) {
     auto packet = hprc::CreateSDPacket(
         builder, millis(), hprc::SensorData_LIS2MDL, sensorData.Union());
 
-    builder.Finish(packet);
+    builder.FinishSizePrefixed(packet);
 
     ctx->logFile.write(builder.GetBufferPointer(), builder.GetSize());
   }
@@ -206,7 +206,7 @@ void loggingLoop(Context *ctx) {
     auto packet = hprc::CreateSDPacket(
         builder, millis(), hprc::SensorData_LIV3F, sensorData.Union());
 
-    builder.Finish(packet);
+    builder.FinishSizePrefixed(packet);
 
     ctx->logFile.write(builder.GetBufferPointer(), builder.GetSize());
   }
