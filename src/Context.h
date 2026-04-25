@@ -22,16 +22,19 @@ struct Context {
     File logFile;
     File errorLogFile;
     File fixedRateLogFile;
+    File ekfLogFile;
     bool sdInitialized;
     bool ekfLooping;
 
-    // MockASM330 asm330;
-    ASM330 asm330;
+    MockASM330 asm330;
+    // ASM330 asm330;
     LSM6 lsm;
     LPS22 baro;
-    // MockLIS2MDL mag;
-    LIS2MDL mag;
+    MockLIS2MDL mag;
+    // LIS2MDL mag;
     LIV3F gps;
+
+    // LoRaE22 radio;
     
     SplitStateEstimator estimator;
 };

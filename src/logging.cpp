@@ -21,11 +21,13 @@ bool initializeLogging(Context *ctx) {
         char filename[100];
         char errorFilename[100];
         char fixedRateLogFilename[100];
+        char ekfLogFilename[100];
         while (fileIdx < 100)
         {
             sprintf(filename, "flightData%d.csv", fileIdx);
             sprintf(errorFilename, "errorLog%d.txt", fileIdx);
             sprintf(fixedRateLogFilename, "fixedRateLog%d.csv", fileIdx);
+            sprintf(ekfLogFilename, "ekfLog%d.csv", fileIdx);
             fileIdx++;
 
             Log.traceln("Trying files `%s/%s`", filename, errorFilename);
@@ -33,7 +35,11 @@ bool initializeLogging(Context *ctx) {
             {
                 ctx->logFile = SD.open(filename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
                 ctx->errorLogFile = SD.open(errorFilename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
-                ctx->fixedRateLogFile = SD.open(fixedRateLogFilename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+                // ctx->fixedRateLogFile = SD.open(fixedRateLogFilename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+                ctx->ekfLogFile = SD.open(ekfLogFilename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+                if (!ctx->ekfLogFile) {
+                    Log.errorln("Failed to create EKF log file");
+                }
                 break;
             }
         }
@@ -43,7 +49,7 @@ bool initializeLogging(Context *ctx) {
     {
         // NOTE: SD initialization failed
         // Do something about that probably
-        Log.infoln("FAILED");
+        Log.warningln("FAILED");
         return false;
     }
 }

@@ -35,13 +35,15 @@ SPIClass CAMERA_SPI(CAMERA_MOSI, CAMERA_MISO, CAMERA_SCK);
 HardwareSerial RADIO_SERIAL(RADIO_SERIAL_RX, RADIO_SERIAL_TX);
 
 Context ctx{
-            .asm330 = ASM330(&SENSORS_SPI, SENSORS_ASM_CS),
-            // .asm330 = MockASM330("imu_corr.csv", 1000),
+            // .asm330 = ASM330(&SENSORS_SPI, SENSORS_ASM_CS),
+            .asm330 = MockASM330("imu_corr.csv", 1000),
             .lsm = LSM6(&SENSORS_SPI, SENSORS_LSM_CS),
             .baro = LPS22(&SENSORS_SPI, SENSORS_LPS_CS),
-            .mag = LIS2MDL(&SENSORS_SPI, SENSORS_LIS_CS),
-            // .mag = MockLIS2MDL("mag_corr.csv", 1000),
-            .gps = LIV3F(GPS_SERIAL)};
+            // .mag = LIS2MDL(&SENSORS_SPI, SENSORS_LIS_CS),
+            .mag = MockLIS2MDL("mag_corr.csv", 1000),
+            .gps = LIV3F(GPS_SERIAL),
+            // .radio = LoRaE22(&RADIO_SERIAL, RADIO_M0, RADIO_M1, RADIO_AUX, "KV0R"),
+          };
 
 SensorManager mgr{
     millis, ctx.asm330, ctx.lsm, ctx.baro, ctx.mag, ctx.gps,
@@ -50,13 +52,54 @@ SensorManager mgr{
 StateID currentState;
 StateData data;
 
+// bool changeSerialPortConfig(RadioConfigTypes::SerialSpeeds baudRate, RadioConfigTypes::ParityConfig parity){
+//   // this is safe to call even when the port is not open.
+//   RADIO_SERIAL.end();
+
+//   uint32_t baud = 0;
+//   uint16_t parityConfig = 0;
+  
+//   // the radio's baud rates don't follow any pattern over the entire range, so ugly switch statement it is
+//   switch(baudRate){
+//     case RadioConfigTypes::SerialSpeeds::BAUD_1200:
+//       baud = 1200; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_2400:
+//       baud = 2400; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_4800:
+//       baud = 4800; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_9600:
+//       baud = 9600; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_19200:
+//       baud = 19200; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_38400:
+//       baud = 38400; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_57600:
+//       baud = 57600; break;
+//     case RadioConfigTypes::SerialSpeeds::BAUD_115200:
+//       baud = 115200; break;
+//   };
+//   // this is just easier
+//   switch(parity){
+//     case RadioConfigTypes::ParityConfig::Parity_8N1:
+//       parityConfig = SERIAL_8N1; break;
+//     case RadioConfigTypes::ParityConfig::Parity_8E1:
+//       parityConfig = SERIAL_8E1; break;
+//     case RadioConfigTypes::ParityConfig::Parity_8O1:
+//       parityConfig = SERIAL_8O1; break;
+//   };
+  
+//   RADIO_SERIAL.begin(baud, parityConfig);
+
+//   return true;
+// }
+
 void initStateData(StateData *data) {
   data->startTime = millis();
   data->currentTime = 0;
   data->deltaTime = 0;
   data->lastLoopTime = 0;
   data->loopCount = 0;
-};
+}
 
 void updateStateData(StateData *data) {
   long long now = millis();
@@ -178,7 +221,7 @@ void setup() {
 
   delay(200);
 
-  Log.begin(LOG_LEVEL_SILENT, &Serial);
+  Log.begin(LOG_LEVEL_INFO, &Serial);
   Log.setPrefix([](Print *p, int level) { p->printf("[ %d ] ", millis()); });
 
   ctx.sdInitialized = initializeLogging(&ctx);
@@ -297,6 +340,24 @@ void ekfLoop(Context *ctx) {
     }
   }
 
+  auto quat = ctx->estimator.get_quat_ned();
+  auto gb = ctx->estimator.get_gyro_bias();
+
+  ctx->errorLogFile.print(millis()); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(0), 8); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(1), 8); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(2), 8); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(quat(3), 8); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(gb(0), 8); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(gb(1), 8); ctx->errorLogFile.print(',');
+  ctx->errorLogFile.print(gb(2), 8); ctx->errorLogFile.println();
+
+  static uint32_t lastFlushTime = 0;
+  if (millis() - lastFlushTime >= 1000) {
+    lastFlushTime = millis();
+    ctx->errorLogFile.flush();
+  }
+
   // auto q = ctx->estimator.get_quat_ned();
 
   // SerialUSB.print("Q: ");
@@ -305,40 +366,40 @@ void ekfLoop(Context *ctx) {
   // SerialUSB.print(q(2)); SerialUSB.print(", ");
   // SerialUSB.println(q(3));
 
-  Serial.print("Time: ");
-  Serial.print(t);
+  // Serial.print("Time: ");
+  // Serial.print(t);
   // Serial.print(". Covariance: ");
   // BLA::Matrix<12, 1> P = ctx->estimator.getAttPDiag();
   // Serial.print(P(0, 0)); Serial.print(", "); Serial.print(P(1, 0));
   // Serial.print(", "); Serial.print(P(2, 0));
 
-  auto R = quat2DCM(ctx->estimator.get_quat_ned());
+  // auto R = quat2DCM(ctx->estimator.get_quat_ned());
 
-  new_roll_axis_vec = R * roll_axis;
-  new_pitch_axis_vec = R * pitch_axis;
-  new_yaw_axis_vec = R * yaw_axis;
+  // new_roll_axis_vec = R * roll_axis;
+  // new_pitch_axis_vec = R * pitch_axis;
+  // new_yaw_axis_vec = R * yaw_axis;
 
-  float roll_diff = acos(vecDot(initial_roll_axis_vec, new_roll_axis_vec));
-  float pitch_diff = acos(vecDot(initial_pitch_axis_vec, new_pitch_axis_vec));
-  float yaw_diff = acos(vecDot(initial_yaw_axis_vec, new_yaw_axis_vec));
+  // float roll_diff = acos(vecDot(initial_roll_axis_vec, new_roll_axis_vec));
+  // float pitch_diff = acos(vecDot(initial_pitch_axis_vec, new_pitch_axis_vec));
+  // float yaw_diff = acos(vecDot(initial_yaw_axis_vec, new_yaw_axis_vec));
 
-  Serial.print(". Roll: ");
-  Serial.print(roll_diff);
+  // Serial.print(". Roll: ");
+  // Serial.print(roll_diff);
 
-  Serial.print(" Pitch: ");
-  Serial.print(pitch_diff);
+  // Serial.print(" Pitch: ");
+  // Serial.print(pitch_diff);
 
-  Serial.print(" Yaw: ");
-  Serial.print(yaw_diff);
+  // Serial.print(" Yaw: ");
+  // Serial.print(yaw_diff);
 
-  Serial.print(". Gyro bias: ");
-  BLA::Matrix<3, 1> gb = ctx->estimator.get_gyro_bias();
-  Serial.print(gb(0, 0), 7);
-  Serial.print(", ");
-  Serial.print(gb(1, 0), 7);
-  Serial.print(", ");
-  Serial.print(gb(2, 0), 7);
-  Serial.println();
+  // Serial.print(". Gyro bias: ");
+  // BLA::Matrix<3, 1> gb = ctx->estimator.get_gyro_bias();
+  // Serial.print(gb(0, 0), 7);
+  // Serial.print(", ");
+  // Serial.print(gb(1, 0), 7);
+  // Serial.print(", ");
+  // Serial.print(gb(2, 0), 7);
+  // Serial.println();
 }
 
 void loop() {
