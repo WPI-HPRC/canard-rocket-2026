@@ -13,7 +13,7 @@ size_t dataLengths[] = {
 };
 
 bool initializeLogging(Context *ctx) {
-    Serial.print("Initailizing SD... ");
+    Log.infoln("Initailizing SD... ");
 
     if (SD.begin()) { 
         // TODO: Define these values
@@ -28,7 +28,7 @@ bool initializeLogging(Context *ctx) {
             sprintf(fixedRateLogFilename, "fixedRateLog%d.csv", fileIdx);
             fileIdx++;
 
-            Serial.printf("Trying files `%s/%s`\n", filename, errorFilename);
+            Log.traceln("Trying files `%s/%s`", filename, errorFilename);
             if (!SD.exists(filename))
             {
                 ctx->logFile = SD.open(filename, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
@@ -43,7 +43,7 @@ bool initializeLogging(Context *ctx) {
     {
         // NOTE: SD initialization failed
         // Do something about that probably
-        Serial.println("FAILED");
+        Log.infoln("FAILED");
         return false;
     }
 }
