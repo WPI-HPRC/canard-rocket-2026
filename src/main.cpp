@@ -35,6 +35,8 @@
 #include <SPI.h>
 #include <Wire.h>
 
+// #define PRINT_SENSORS
+
 SPIClass SENSORS_SPI(SENSORS_SPI_MOSI, SENSORS_SPI_MISO, SENSORS_SPI_SCK);
 TwoWire GPS_I2C(GPS_I2C_SDA, GPS_I2C_SCL);
 HardwareSerial GPS_SERIAL(GPS_SERIAL_RX, GPS_SERIAL_TX);
@@ -282,15 +284,48 @@ void radioLoop() {
 
 void initCanardServos() {
   Log.infoln("Beginning encoders");
-  ctx.encoder1.begin();
-  ctx.encoder2.begin();
-  ctx.encoder3.begin();
-  ctx.encoder4.begin();
-  ctx.c1.attach(SERVO1_PWM);
-  ctx.c2.attach(SERVO2_PWM);                                               
-  ctx.c3.attach(SERVO3_PWM);                                               
-  ctx.c4.attach(SERVO4_PWM);
-  //Set canards to 0 deg? 
+
+  pinMode(CANARD_POWER_ENABLE, OUTPUT);
+  pinMode(LEVEL_SHIFT_ENABLE, OUTPUT);
+  
+  digitalWrite(CANARD_POWER_ENABLE, HIGH);
+  digitalWrite(LEVEL_SHIFT_ENABLE, HIGH);
+  
+  if(!ctx.encoder1.begin()) {
+    Log.infoln("Encoder 1 begin");
+  } else {
+    Log.infoln("Encoder 1 FAILED to begin");
+  }
+  
+  if(!ctx.encoder2.begin()) {
+    Log.infoln("Encoder 2 begin");
+  } else {
+    Log.infoln("Encoder 2 FAILED to begin");
+  }
+  if(!ctx.encoder3.begin()) {
+    Log.infoln("Encoder 3 begin");
+  } else {
+    Log.infoln("Encoder 3 FAILED to begin");
+  }
+  if(!ctx.encoder4.begin()) {
+    Log.infoln("Encoder 4 begin");
+  } else {
+    Log.infoln("Encoder 4 FAILED to begin");
+  }
+
+  uint8_t status = ctx.c1.attach(SERVO1_PWM);
+  Serial.printf("Attached to Servo 1, STATUS %02X\n", status);
+
+  status = ctx.c2.attach(SERVO2_PWM);                
+  Serial.printf("Attached to Servo 2, STATUS %02X\n", status);
+
+  status = ctx.c3.attach(SERVO3_PWM);    
+  Serial.printf("Attached to Servo 3, STATUS %02X\n", status);
+                                           
+  status = ctx.c4.attach(SERVO4_PWM);
+  Serial.printf("Attached to Servo 4, STATUS %02X\n", status);
+
+  Log.infoln("Initialized Canards Encoders and Servos");
 }
 
 void initStateData(StateData *data) {
@@ -307,6 +342,39 @@ void updateStateData(StateData *data) {
   data->deltaTime = now - data->lastLoopTime;
   data->lastLoopTime = now;
   data->loopCount++;
+}
+
+void canardLoop() {
+  static unsigned long last_print = 0;
+  static int loop_count = 0;
+
+  if (millis() - last_print > 500) {
+    int value = loop_count % 2 == 0 ? 90 : 0;
+
+    /*
+    BLA::Matrix<3,1> rpy =  ctx.estimator.get_rpy_ned();
+    float p = rpy(1, 1);
+    float value = 90 - p;
+    */
+
+    ctx.c1.write(value);
+    ctx.c2.write(value);
+    ctx.c3.write(value);
+    ctx.c4.write(value);
+    
+    loop_count++;
+    last_print = millis();
+
+    digitalWrite(LED_RED, !digitalRead(LED_RED));
+
+    // TODO: Fix!
+    // float dutyCycle = ctx.encoder2.getDutyCycle();
+    // float freq      = ctx.encoder2.getFrequency();
+
+    // Serial.print("Encoder 2 duty cycle: "); Serial.println(dutyCycle, 2);
+    // Serial.print("Encoder 2 frequency: "); Serial.println(freq, 2);
+    // Serial.printf("Read Encoder 1\n");
+  }
 }
 
 void sensorsSetup() {
@@ -338,6 +406,7 @@ void sensorLoop() {
     last_print = millis();
     loop_count++;
 
+    #ifdef PRINT_SENSORS
     Log.infoln("=== Loop %d ===", loop_count);
 
     // DIRECT ACCESS to sensor data - this is guaranteed to work
@@ -401,6 +470,7 @@ void sensorLoop() {
     // Log.infoln("Encoder4: %F%% @ %F Hz", ctx.encoder4.getDutyCycle());
 
     Log.infoln("======================\n");
+    #endif
   }
 }
 
@@ -624,11 +694,13 @@ void loop() {
 
   sensorLoop();
 
-  radioLoop();
+  // radioLoop();
 
   if (ctx.ekfLooping) {
     ekfLoop(&ctx);
   }
+
+  canardLoop();
 
   loggingLoop(&ctx);
 }
