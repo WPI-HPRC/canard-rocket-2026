@@ -26,7 +26,12 @@
 
 #include "boilerplate/Sensors/SensorManager/SensorManager.h"
 
+// #define PRINT_SENSORS
+
 #include "logging.h"
+
+#include "canard_lqr_controller/CanardLQRController.h"
+#include "canard_lqr_controller/GainScheduler.h"
 
 #include "LoRaE22.h"
 #include "RadioConfig.h"
@@ -34,6 +39,8 @@
 #include <HardwareSerial.h>
 #include <SPI.h>
 #include <Wire.h>
+#include <cmath>
+#include <cmath>
 
 // #define PRINT_SENSORS
 
@@ -68,6 +75,9 @@ SensorManager mgr{
 StateID currentState;
 StateData data;
 
+// LQR Controller
+CanardLQRController lqrController(&GainScheduler::instance());
+
 void handleCommand(hprc::Command cmd) {
   switch (cmd) {
   case hprc::Command_ArmFlight:
@@ -94,6 +104,8 @@ void handleCommand(hprc::Command cmd) {
     break;
   }
 }
+
+bool gy = false;
 
 bool changeSerialPortConfig(RadioConfigTypes::SerialSpeeds baudRate,
                             RadioConfigTypes::ParityConfig parity) {
@@ -377,6 +389,102 @@ void canardLoop() {
   }
 }
 
+void lqrLoop() {
+  static unsigned long last_update = 0;
+  static const unsigned long UPDATE_INTERVAL = 50;  // 50ms update rate
+  static const float CENTER_POSITION = 90.0f;  // 90 degrees center
+  static const float SERVO_RANGE = 90.0f;     // ±90 degrees from center
+  
+  // Only update at desired rate
+  if (millis() - last_update < UPDATE_INTERVAL) {
+    return;
+  }
+  last_update = millis();
+
+  // Check if EKF is running for attitude data
+  if (!ctx.ekfLooping) {
+    // If EKF not running, write neutral position
+    Serial.println("EKF not running, setting canards to neutral");
+    ctx.c1.write(CENTER_POSITION);
+    ctx.c2.write(CENTER_POSITION);
+    ctx.c3.write(CENTER_POSITION);
+    ctx.c4.write(CENTER_POSITION);
+    return;
+  }
+
+  // Get RPY from EKF
+  BLA::Matrix<3, 1> rpy = ctx.estimator.get_rpy_ned();
+  float roll = rpy(0, 0);      // Roll in radians
+  float pitch = rpy(1, 0);     // Pitch in radians
+  float yaw = rpy(2, 0);       // Yaw in radians
+
+  // Get angular velocities from EKF
+  BLA::Matrix<3, 1> gyro = ctx.estimator.get_gyro_prev();
+  float roll_rate = gyro(0, 0);    // Rdot in rad/s
+  float pitch_rate = gyro(1, 0);   // Pdot in rad/s
+  float yaw_rate = gyro(2, 0);     // Ydot in rad/s
+
+  // Build state vector: x = [R, P, Y, Rdot, Pdot, Ydot]
+  float x[LQR_NUM_STATES] = {
+    roll,       // R (rad)
+    pitch,      // P (rad)
+    yaw,        // Y (rad)
+    roll_rate,  // Rdot (rad/s)
+    pitch_rate, // Pdot (rad/s)
+    yaw_rate    // Ydot (rad/s)
+  };
+
+  // Compute velocity and height for gain scheduling
+  // TODO: Get actual velocity and altitude from sensors/state
+  float velocity_mps = 100.0f;  // Default velocity in m/s
+  float height_m = 1000.0f;     // Default height in m
+
+  // Compute LQR control
+  float u[LQR_NUM_INPUTS] = {0};  // u = [delta1, delta2, delta3, delta4] in rad
+  
+  if (lqrController.isReady()) {
+    if (lqrController.compute(velocity_mps, height_m, x, u)) {
+      // Convert radians to servo angles (0-180 degrees)
+      // Assuming LQR output is canard deflection in radians
+      // Map to servo position: servo_angle = CENTER ± (radians_to_degrees * SERVO_RANGE)
+      for (int i = 0; i < 4; i++) {
+        // Convert radians to degrees
+        float angle_offset = (u[i] * 180.0f / M_PI);
+        
+        // Clamp to servo range
+        if (angle_offset > SERVO_RANGE) angle_offset = SERVO_RANGE;
+        if (angle_offset < -SERVO_RANGE) angle_offset = -SERVO_RANGE;
+        
+        // Write servo command
+        float servo_angle = CENTER_POSITION + angle_offset;
+        if (servo_angle > 180.0f) servo_angle = 180.0f;
+        if (servo_angle < 0.0f) servo_angle = 0.0f;
+        
+        switch (i) {
+          case 0: ctx.c1.write((uint8_t)servo_angle); break;
+          case 1: ctx.c2.write((uint8_t)servo_angle); break;
+          case 2: ctx.c3.write((uint8_t)servo_angle); break;
+          case 3: ctx.c4.write((uint8_t)servo_angle); break;
+        }
+      }
+    } else {
+      // LQR computation failed, go to neutral
+      Serial.println("LQR computation failed, setting canards to neutral");
+      ctx.c1.write(CENTER_POSITION);
+      ctx.c2.write(CENTER_POSITION);
+      ctx.c3.write(CENTER_POSITION);
+      ctx.c4.write(CENTER_POSITION);
+    }
+  } else {
+    // LQR controller not ready, go to neutral
+    Serial.println("LQR controller not ready, setting canards to neutral");
+    ctx.c1.write(CENTER_POSITION);
+    ctx.c2.write(CENTER_POSITION);
+    ctx.c3.write(CENTER_POSITION);
+    ctx.c4.write(CENTER_POSITION);
+  }
+}
+
 void sensorsSetup() {
   Log.infoln("Starting MARS board initialization...");
   SENSORS_SPI.begin();
@@ -516,7 +624,18 @@ void setup() {
 
   ctx.ekfLooping = false;
 
+  bool ok = GainScheduler::instance().init("/lqr_table.csv");
+
+  if (!ok) {
+      Serial.println("FAILED TO LOAD LQR TABLE");
+  } else {
+      Serial.println("LQR READY");
+  }
+
   ctx.estimator.init(millis() / 1000.0f, {0, 0, 0}, {0, 0, 0});
+
+  ekfStartTime = millis() / 1000.0f;
+  ctx.ekfLooping = true;
 
   digitalWrite(LED_GREEN, HIGH);
   Log.infoln("=== Starting main loop ===\n");
@@ -579,13 +698,21 @@ void ekfLoop(Context *ctx) {
     initial_yaw_axis_vec = R0 * yaw_axis;
 
   } else if (state == 1) {
-    if (t > 15.0f) {
+    if (t > 35.0f) {
       state = 2;
-      auto R0 = quat2DCM(ctx->estimator.get_quat_ned());
+      // auto R0 = quat2DCM(ctx->estimator.get_quat_ned());
 
-      initial_roll_axis_vec = R0 * roll_axis;
-      initial_pitch_axis_vec = R0 * pitch_axis;
-      initial_yaw_axis_vec = R0 * yaw_axis;
+      // initial_roll_axis_vec = R0 * roll_axis;
+      // initial_pitch_axis_vec = R0 * pitch_axis;
+      // initial_yaw_axis_vec = R0 * yaw_axis;
+
+      ctx->estimator.setQuatNED({1, 0, 0, 0});
+      SerialUSB.println(ctx->estimator.get_quat_ned());
+      SerialUSB.println("PROPPING");
+      SerialUSB.println("PROPPING");
+      SerialUSB.println("PROPPING");
+      SerialUSB.println("PROPPING");
+      gy = true;
     }
     if (t - lastCalcTimes(0, 0) >= runRates(0, 0)) {
 
@@ -595,12 +722,22 @@ void ekfLoop(Context *ctx) {
                                        ctx->estimator.reorient_lis(mag), t);
       // ctx->estimator.runMagUpdate(ctx->estimator.reorient_lis(mag), t);
 
+
+      Serial.print(". Gyro bias: ");
+      BLA::Matrix<3, 1> gb = ctx->estimator.get_gyro_bias();
+      Serial.print(gb(0, 0), 7);
+      Serial.print(", ");
+      Serial.print(gb(1, 0), 7);
+      Serial.print(", ");
+      Serial.print(gb(2, 0), 7);
+      Serial.println();
+
       lastCalcTimes(0, 0) = t;
       // SerialUSB.println("GYRO PROPPING");
     }
   } else if (state == 2) {
     if (t - lastCalcTimes(0, 0) >= runRates(0, 0)) {
-
+      // Serial.print("Gyro prop at t = "); Serial.println(t, 3);
       ctx->estimator.fastGyroProp(ctx->estimator.reorient_asm(gyro), t);
       // ctx->estimator.AttekfPredict(t);
       // ctx->estimator.runAccelMagUpdate(ctx->estimator.reorient_asm(accel),
@@ -609,25 +746,30 @@ void ekfLoop(Context *ctx) {
     }
   }
 
+  // Serial.print("Time: ");
+  // Serial.println(t, 3);
+
+  // ctx->estimator.setQuatNED({0.99, 0.16, 0.00, 0.00});
+
   auto quat = ctx->estimator.get_quat_ned();
   auto gb = ctx->estimator.get_gyro_bias();
 
-  ctx->errorLogFile.print(millis());
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(quat(0), 8);
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(quat(1), 8);
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(quat(2), 8);
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(quat(3), 8);
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(gb(0), 8);
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(gb(1), 8);
-  ctx->errorLogFile.print(',');
-  ctx->errorLogFile.print(gb(2), 8);
-  ctx->errorLogFile.println();
+  // ctx->errorLogFile.print(millis());
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(quat(0), 8);
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(quat(1), 8);
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(quat(2), 8);
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(quat(3), 8);
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(gb(0), 8);
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(gb(1), 8);
+  // ctx->errorLogFile.print(',');
+  // ctx->errorLogFile.print(gb(2), 8);
+  // ctx->errorLogFile.println();
 
   // static uint32_t lastFlushTime = 0;
   // if (millis() - lastFlushTime >= 1000) {
@@ -635,13 +777,21 @@ void ekfLoop(Context *ctx) {
   //   ctx->errorLogFile.flush();
   // }
 
-  // auto q = ctx->estimator.get_quat_ned();
 
-  // SerialUSB.print("Q: ");
-  // SerialUSB.print(q(0)); SerialUSB.print(", ");
-  // SerialUSB.print(q(1)); SerialUSB.print(", ");
-  // SerialUSB.print(q(2)); SerialUSB.print(", ");
-  // SerialUSB.println(q(3));
+  auto q = ctx->estimator.get_quat_ned();
+
+  // Serial.print("Q: ");
+  // Serial.print(q(0)); Serial.print(", ");
+  // Serial.print(q(1)); Serial.print(", ");
+  // Serial.print(q(2)); Serial.print(", ");
+  // Serial.println(q(3));
+
+  auto rpy = ctx->estimator.get_rpy_ned();
+  Serial.print("RPY: ");
+  Serial.print(rpy(0)); Serial.print(", ");
+  Serial.print(rpy(1)); Serial.print(", ");
+  Serial.println(rpy(2));
+
 
   // Serial.print("Time: ");
   // Serial.print(t);
@@ -692,15 +842,35 @@ void loop() {
     Log.infoln("Transitioned to %d", newState);
   }
 
+  // Serial.println("Start sensor loop");
   sensorLoop();
+  // Serial.println("End sensor loop");
 
   // radioLoop();
 
   if (ctx.ekfLooping) {
+    // Serial.println("Start EKF loop");
     ekfLoop(&ctx);
+    // Serial.println("End EKF loop");
   }
 
-  canardLoop();
+  // Serial.println("Start canard loop");
+  // canardLoop();
+  // Serial.println("End canard loop");
 
-  loggingLoop(&ctx);
+  // Serial.println("Start LQR loop");
+  // lqrLoop();
+  // Serial.println("End LQR loop");
+
+  // Serial.println("Start LQR loop");
+  if(gy){
+    Serial.println("Starting LQR loop");
+    lqrLoop();
+  }
+  // Serial.println("End LQR loop");
+
+  // Serial.println("Start logging loop");
+  // loggingLoop(&ctx);                 //LOGGING LOOP BROKEN NOT GOOD! MAKE CRASH!! SO BAD!!!
+  // Serial.println("End logging loop");
+
 }
