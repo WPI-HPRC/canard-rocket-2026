@@ -41,6 +41,13 @@
 #include <Wire.h>
 #include <cmath>
 #include <cmath>
+#include <BasicLinearAlgebra.h>
+
+// From experimenting ;)
+#define CANARD_SERVO_1_ID 'D'
+#define CANARD_SERVO_2_ID 'C'
+#define CANARD_SERVO_3_ID 'B'
+#define CANARD_SERVO_4_ID 'A'
 
 // #define PRINT_SENSORS
 
@@ -77,6 +84,41 @@ StateData data;
 
 // LQR Controller
 CanardLQRController lqrController(&GainScheduler::instance());
+
+
+void actuate_servo_ID(char ID, int angle) {
+  switch (ID) {
+    case CANARD_SERVO_1_ID:
+      ctx.c1.write(angle);
+      break;
+    case CANARD_SERVO_2_ID:
+      ctx.c2.write(angle);
+      break;
+    case CANARD_SERVO_3_ID:
+      ctx.c3.write(angle);
+      break;
+    case CANARD_SERVO_4_ID:
+      ctx.c4.write(angle);
+      break;
+  }
+}
+
+void actuate_servo_number(uint32_t servo_num, int angle) {
+  switch(servo_num) {
+    case 0:
+      ctx.c1.write(angle);
+      break;
+    case 1:
+      ctx.c2.write(angle);
+      break;
+    case 2:
+      ctx.c3.write(angle);
+      break;
+    case 3:
+      ctx.c4.write(angle);
+      break;
+  }
+}
 
 void handleCommand(hprc::Command cmd) {
   switch (cmd) {
@@ -418,6 +460,22 @@ void lqrLoop() {
   float pitch = rpy(1, 0);     // Pitch in radians
   float yaw = rpy(2, 0);       // Yaw in radians
 
+  
+  float setpoint_p = 90 - pitch * RAD_TO_DEG;
+  float setpoint_y = 90 - yaw * RAD_TO_DEG;
+  // setpoint = 90;
+  // setpoint = 0;
+
+  Serial.print("PITCH: "); Serial.println(pitch * RAD_TO_DEG);
+  Serial.print("YAW: "); Serial.println(yaw * RAD_TO_DEG);
+
+  actuate_servo_ID('A', setpoint_p);
+  actuate_servo_ID('C', setpoint_p);
+  actuate_servo_ID('B', setpoint_y);
+  actuate_servo_ID('D', setpoint_y);
+
+  return;
+
   // Get angular velocities from EKF
   BLA::Matrix<3, 1> gyro = ctx.estimator.get_gyro_prev();
   float roll_rate = gyro(0, 0);    // Rdot in rad/s
@@ -681,10 +739,20 @@ void ekfLoop(Context *ctx) {
   mag = {mag_desc.data.mag0, mag_desc.data.mag1, mag_desc.data.mag2};
   baro = {baro_desc.data.pressure};
 
+  static uint32_t last_time = 0;
+  static uint32_t loop_count = 0;
+  uint32_t time = millis();
+  uint32_t print_time = 2000;
+
+  std::string printstr = "";
+
   if (state == 0) {
     if (t > 5.0f) {
       state = 1;
     }
+
+    printstr = "Initializing";
+
     ctx->estimator.computeInitialOrientation(ctx->estimator.reorient_asm(accel),
                                              ctx->estimator.reorient_lis(mag),
                                              t);
@@ -706,23 +774,26 @@ void ekfLoop(Context *ctx) {
       // initial_pitch_axis_vec = R0 * pitch_axis;
       // initial_yaw_axis_vec = R0 * yaw_axis;
 
+      /*
       ctx->estimator.setQuatNED({1, 0, 0, 0});
       SerialUSB.println(ctx->estimator.get_quat_ned());
       SerialUSB.println("PROPPING");
       SerialUSB.println("PROPPING");
       SerialUSB.println("PROPPING");
       SerialUSB.println("PROPPING");
+      */
       gy = true;
     }
     if (t - lastCalcTimes(0, 0) >= runRates(0, 0)) {
 
+      printstr = "Figuring out orientation...";
       ctx->estimator.fastGyroProp(ctx->estimator.reorient_asm(gyro), t);
       ctx->estimator.AttekfPredict(t);
       ctx->estimator.runAccelMagUpdate(ctx->estimator.reorient_asm(accel),
                                        ctx->estimator.reorient_lis(mag), t);
       // ctx->estimator.runMagUpdate(ctx->estimator.reorient_lis(mag), t);
 
-
+      /*
       Serial.print(". Gyro bias: ");
       BLA::Matrix<3, 1> gb = ctx->estimator.get_gyro_bias();
       Serial.print(gb(0, 0), 7);
@@ -731,12 +802,14 @@ void ekfLoop(Context *ctx) {
       Serial.print(", ");
       Serial.print(gb(2, 0), 7);
       Serial.println();
+      */
 
       lastCalcTimes(0, 0) = t;
       // SerialUSB.println("GYRO PROPPING");
     }
   } else if (state == 2) {
     if (t - lastCalcTimes(0, 0) >= runRates(0, 0)) {
+      printstr = "Propagating gyros...";
       // Serial.print("Gyro prop at t = "); Serial.println(t, 3);
       ctx->estimator.fastGyroProp(ctx->estimator.reorient_asm(gyro), t);
       // ctx->estimator.AttekfPredict(t);
@@ -744,6 +817,11 @@ void ekfLoop(Context *ctx) {
       // ctx->estimator.reorient_lis(mag), t , 100.0);
       lastCalcTimes(0, 0) = t;
     }
+  }
+
+  if (time - last_time > print_time) {
+    last_time = millis();
+    Serial.print("EKF ["); Serial.print(time); Serial.print("] "); Serial.println(printstr.c_str());
   }
 
   // Serial.print("Time: ");
@@ -787,10 +865,12 @@ void ekfLoop(Context *ctx) {
   // Serial.println(q(3));
 
   auto rpy = ctx->estimator.get_rpy_ned();
+  /*
   Serial.print("RPY: ");
   Serial.print(rpy(0)); Serial.print(", ");
   Serial.print(rpy(1)); Serial.print(", ");
   Serial.println(rpy(2));
+  */
 
 
   // Serial.print("Time: ");
@@ -864,7 +944,7 @@ void loop() {
 
   // Serial.println("Start LQR loop");
   if(gy){
-    Serial.println("Starting LQR loop");
+    // Serial.println("Starting LQR loop");
     lqrLoop();
   }
   // Serial.println("End LQR loop");
@@ -872,5 +952,4 @@ void loop() {
   // Serial.println("Start logging loop");
   // loggingLoop(&ctx);                 //LOGGING LOOP BROKEN NOT GOOD! MAKE CRASH!! SO BAD!!!
   // Serial.println("End logging loop");
-
 }
